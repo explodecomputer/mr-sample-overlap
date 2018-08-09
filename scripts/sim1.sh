@@ -6,6 +6,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --array=1-83
 #SBATCH --output=job_reports/slurm-%A_%a.out
+#SBATCH --partition=mrcieu
 
 echo "Running on ${HOSTNAME}"
 module add R/3.2.3-foss-2016a
@@ -17,5 +18,5 @@ fi
 
 i=${SLURM_ARRAY_TASK_ID}
 
-Rsript scenario1.r 10000 ${i}
+Rscript sim1.r 10000 ${i}
 

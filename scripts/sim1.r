@@ -35,8 +35,8 @@ main <- function()
 		out[[i]] <- suppressMessages(runsim(param[i,]))
 	}
 	out <- bind_rows(out)
-	dir.create("../results/scenario1", recursive=TRUE, showWarnings=FALSE)
-	save(out, file=paste0("../results/scenario1/out", chunk, ".rdata"))
+	dir.create("../results/sim1", recursive=TRUE, showWarnings=FALSE)
+	save(out, file=paste0("../results/sim1/out", chunk, ".rdata"))
 }
 
 get_r_vals <- function(f, n)
