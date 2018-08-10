@@ -135,7 +135,7 @@ out4l <- gather(out4, key="key", value="value", -c(nid, overlap, f, xy, ux, uy, 
 ggplot(out2l, aes(x=key, y=value)) +
 geom_boxplot()
 
-ggplot(out1l %>% filter(f>10, abs(xy) == 0.1), aes(x=key, y=value-xy)) +
+ggplot(out1l %>% filter(f>10), aes(x=key, y=value-xy)) +
 geom_boxplot() +
 ylim(-0.5,0.5)
 
@@ -145,11 +145,42 @@ geom_boxplot()
 ggplot(out4l, aes(x=key, y=value)) +
 geom_boxplot()
 
-filter(out1l, key=="mro") %>% ggplot(aes(x=as.factor(overlap), y=value)) + geom_boxplot() + ylim(-1,1)
-filter(out2l, key=="mr11") %>% ggplot(aes(x=as.factor(overlap), y=value)) + geom_boxplot()
-filter(out3l, key=="mr11") %>% ggplot(aes(x=as.factor(overlap), y=value)) + geom_boxplot()
-filter(out4l, key=="mr11") %>% ggplot(aes(x=as.factor(overlap), y=value)) + geom_boxplot()
+filter(out1l, key=="mro") %>% ggplot(aes(x=overlap, y=value)) + geom_point(aes(colour=f <11)) + ylim(-1,1) + geom_smooth(method="lm",aes(colour=f<11))
+filter(out2l, key=="mr11") %>% ggplot(aes(x=as.factor(overlap), y=value)) + geom_violin()
+filter(out3l, key=="mr11") %>% ggplot(aes(x=as.factor(overlap), y=value)) + geom_violin()
+filter(out4l, key=="mr11") %>% ggplot(aes(x=as.factor(overlap), y=value)) + geom_violin()
 
 ```
 
+
+```{r}
+temp <- filter(param, ux != 0 & uy != 0) %>% group_by(f, overlap) %>%
+summarise(r=cor(mro_beta, obs11_beta))
+
+ggplot(temp, aes(x=overlap, y=r, group=as.factor(f))) + geom_point(aes(colour=f)) +
+geom_line(aes(colour=f))
+
+temp <- filter(param, ux != 0 & uy != 0 & xy > 0.4) %>% group_by(f, overlap) %>% select(mro_beta, obs11_beta)
+
+ggplot(temp %>% filter(f >= 8), aes(x=obs11_beta, y=mro_beta)) +
+# geom_point() +
+geom_smooth(method="lm") +
+facet_wrap(~ f + overlap, scale="free")
+
+temp <- filter(param, ux != 0 & uy != 0 & xy > 0.4) %>% group_by(f, overlap) %>% select(mro_beta, obs11_beta)
+
+ggplot(temp %>% filter(f >= 8), aes(x=obs11_beta, y=mro_beta)) +
+# geom_point() +
+geom_smooth(method="lm") +
+facet_wrap(~ f + overlap, scale="free")
+
+temp <- filter(param, ux != 0 & uy != 0 & xy > 0.3) %>% group_by(f, ux, uy, overlap) %>% summarise(r=cor(mro_beta, obs11_beta), n=n())
+
+temp %>% ggplot(aes(x=as.numeric(overlap), y=r, group=as.factor(f))) +
+geom_point(aes(colour=f)) +
+geom_smooth(method="lm")
+
+summary(lm(r ~ overlap * f, temp))
+
+```
 
