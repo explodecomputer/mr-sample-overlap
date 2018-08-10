@@ -18,5 +18,5 @@ fi
 
 i=${SLURM_ARRAY_TASK_ID}
 
-Rscript sim2.r 1000 ${i}
+Rscript sim2.r 10000 ${i}
 

@@ -1,0 +1,51 @@
+What are the F statistics for BMI?
+
+```{r}
+a <- extract_instruments(2)
+b <- extract_outcome_data(a$SNP, 7)
+dat <- harmonise_data(a, b) %>% filter(mr_keep)
+
+a$rsq <- a$beta.exposure^2 * a$eaf.exposure * (1 - a$eaf.exposure) * 2
+a$rsq2 <- get_r_from_pn(a$pval.exposure, a$samplesize.exposure)^2
+
+plot(a$rsq, a$rsq2)
+```
+
+```{r}
+f <- a$rsq / (1 - a$rsq) * (a$samplesize.exposure-2)
+f %>% sort
+```
+
+
+
+```{r}
+library(tidyverse)
+load("../results/sim2.rdata")
+temp <- group_by(param, nid, overlap, f, xy, ux, uy) %>% summarise()
+temp$sim <- 1:nrow(temp)
+param <- inner_join(param, temp) %>% as.tibble
+```
+
+
+```{r}
+temp <- filter(param, fval11 >= 9) %>% group_by(sim, f, xy, uy, overlap) %>%
+summarise(
+	n=n(),
+	obs11=mean(obs11_beta),
+	obs22=mean(obs22_beta),
+	# obso=mean(obso_beta),
+	mr11=mean(mr11_beta),
+	mr22=mean(mr22_beta),
+	mr12=mean(mr12_beta),
+	mr21=mean(mr21_beta),
+	mro=mean(mro_beta)
+)
+templ <- gather(temp, key="key", value="value", -c(f, xy, uy, sim, n, overlap))
+ggplot(templ %>% filter(key %in% c("mro")), aes(x=overlap, y=value)) +
+geom_point(aes(colour=f)) +
+geom_hline(aes(yintercept=xy)) +
+geom_line(aes(colour=f, group=as.factor(f))) +
+facet_grid(xy ~ uy, scale="free_y")
+
+```
+
