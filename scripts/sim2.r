@@ -5,7 +5,7 @@ library(progress)
 main <- function()
 {
 	param <- expand.grid(
-		nsim = 1:1000,
+		nsim = 1:10000,
 		nid=c(100000),
 		overlap=seq(0, 1, by=0.2),
 		f = c(10, 50, 100, 500),
