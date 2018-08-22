@@ -1,4 +1,26 @@
-What are the F statistics for BMI?
+---
+title: Is sample overlap a problem in two-sample Mendelian randomisation?
+author: Gibran Hemani
+---
+
+```{r, echo=FALSE}
+library(knitr)
+opts_chunk$set(echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE)
+```
+
+```{r}
+library(TwoSampleMR)
+library(tidyverse)
+```
+
+## Background
+
+Weak instrument bias and its interplay with sample overlap is amongst the myriad of complications in two sample Mendelian randomisation (2SMR) analyses. The use of Weak instruments will induce bias in the direction of the null if the exposure and the outcome data is from entirely independent samples. However, the bias is in the direction of the observational association (which is prone to confonding) if there is sample overlap. As a guide, an instrument with an F statistic of 10 will lead to 10% bias in the direction of the observational estimate.
+
+Often the extent of sample overlap is not known between two GWAS datasets, so the question of the direction of potential bias is hard to predict. This has led some studies to exclude analyses if there is suspicion or knowledge of substantial sample overlap between an exposure and outcome analysis.
+
+However, the magnitude of bias that might arise is a function of the strength of the instruments, and it is important to recall that the vast majority of properly conducted 2SMR analyses restrict instruments to those that pass GWAS significance at p < 5e-8. This imparts an explicit cap on how low the F statistic can go. For example, the distribution of F statistics for instruments typically used for body mass index are shown here:
+
 
 ```{r}
 a <- extract_instruments(2)
@@ -8,27 +30,65 @@ dat <- harmonise_data(a, b) %>% filter(mr_keep)
 a$rsq <- a$beta.exposure^2 * a$eaf.exposure * (1 - a$eaf.exposure) * 2
 a$rsq2 <- get_r_from_pn(a$pval.exposure, a$samplesize.exposure)^2
 
-plot(a$rsq, a$rsq2)
+a$f <- a$rsq / (1 - a$rsq) * (a$samplesize.exposure-2)
+ggplot(a, aes(x=SNP, y=pmin(f, 100))) +
+geom_point() +
+geom_hline(yintercept=10, linetype = "dotted") +
+labs(x="BMI instrumenting SNP", y="F statistic") +
+ylim(0, 100) +
+scale_y_continuous(breaks=seq(0,100,10)) +
+theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=6))
 ```
 
+The y-axis here is capped to an F value of 100, but the highest F statistic is actually `r max(a$f) %>% round(1)` and the mean F statistic is `r mean(a$f) %>% round(1)`.
+
+## F statistics across all GWAS studies
+
+Looking systematically at the GWAS studies for continuous traits available in MR-Base, we can see that this sort of distribution is typical:
+
 ```{r}
-f <- a$rsq / (1 - a$rsq) * (a$samplesize.exposure-2)
-f %>% sort
+library(TwoSampleMR)
+data(mrbase_instruments)
+mrb <- subset(mrbase_instruments, !units.exposure %in% c("log odds") & !is.na(units.exposure) & !is.na(pval.exposure) & !is.na(samplesize.exposure))
+mrb$rsq <- get_r_from_pn(mrb$pval.exposure, mrb$samplesize.exposure)^2
+mrb$fval <- mrb$rsq / (1 - mrb$rsq) * (mrb$samplesize.exposure - 2)
+mrb <- subset(mrb, !is.na(fval))
+hist(mrb$fval)
+hist(mrb$rsq)
+
+subset(mrb, rsq > 0.05) %>% group_by(exposure) %>% summarise(n=n()) %>% as.data.frame
+
+trait_summary <- group_by(mrb, id.exposure) %>%
+	summarise(
+		`min within study`=min(fval),
+		`max within study`=max(fval),
+		`median within study`=median(fval),
+		`mean within study`=mean(fval),
+		nsnp=n(),
+		nid=mean(samplesize.exposure)
+	)
+trait_summaryl <- gather(trait_summary, "key", "value", -c(id.exposure, nsnp, nid))
+temp <- data_frame(id.exposure=1, nsnp=1, nid=1, key="all snps", value=mrb$fval)
+trait_summaryl <- rbind(trait_summaryl, temp)
+ggplot(trait_summaryl, aes(x=value)) + geom_histogram(bins=100) + geom_vline(xintercept=10) +
+facet_grid(key ~ ., scale="free_y") +
+labs(x="F statistics", y="Number of studies") +
+scale_x_continuous(limits=c(0,100), breaks=seq(0,100,10))
 ```
 
+Winner's curse disproportionately inflates the effect sizes of SNPs with p-values closest to the threshold, so it is possible that among the GWAS studies there are some weak instruments. 
 
+## The influence of sample overlap on bias in MR
+
+Simulations were conducted to evaluate the extent to which instrument strength in the range of most GWAS studies might perform under varying levels of sample overlap. Datasets were generated whereby 
 
 ```{r}
-library(tidyverse)
 load("../results/sim2.rdata")
 temp <- group_by(param, nid, overlap, f, xy, ux, uy) %>% summarise()
 temp$sim <- 1:nrow(temp)
 param <- inner_join(param, temp) %>% as.tibble
-```
-
-
-```{r}
-temp <- filter(param, fval11 >= 9) %>% group_by(sim, f, xy, uy, overlap) %>%
+# temp <- filter(param, fval11 > 9) %>% group_by(sim, f, xy, uy, overlap) %>%
+temp <- param %>% filter(abs(mro_beta) < 2) %>% group_by(sim, f, xy, uy, overlap) %>%
 summarise(
 	n=n(),
 	obs11=mean(obs11_beta),
@@ -38,14 +98,63 @@ summarise(
 	mr22=mean(mr22_beta),
 	mr12=mean(mr12_beta),
 	mr21=mean(mr21_beta),
-	mro=mean(mro_beta)
+	mro=mean(mro_beta^2 * sign(mro_beta)),
+	mrose=sd(mro_beta^2 * sign(mro_beta))/sqrt(n())
 )
 templ <- gather(temp, key="key", value="value", -c(f, xy, uy, sim, n, overlap))
+t1 <- templ %>% filter(key == "mro")
+t2 <- templ %>% filter(key == "mrose")
+names(t2)[names(t2) == "value"] <- "se"
+templ <- inner_join(t1, t2 %>% ungroup %>% select(sim, se), by=c("sim"))
+library(RColorBrewer)
+my_orange = brewer.pal(n = 9, "Oranges")[3:9]
 ggplot(templ %>% filter(key %in% c("mro")), aes(x=overlap, y=value)) +
-geom_point(aes(colour=f)) +
+geom_point(aes(colour=as.factor(f))) +
+geom_errorbar(aes(colour=as.factor(f), ymin=value - se * 1.96, ymax=value + se * 1.96), width=0) +
+geom_hline(aes(yintercept=xy^2)) +
+geom_line(aes(colour=as.factor(f), group=as.factor(f))) +
+facet_grid(paste("causal effect =", xy^2) ~ paste("confounding =", uy), scale="free_y") +
+scale_colour_manual(values=my_orange) +
+labs(x="Proportion sample overlap", y="Mean effect estimate", colour="Instrument F statistic")
+
+
+
+
+temp <- param %>% filter(fval11 <= 24 & fval11 >= 9) %>%
+mutate(fval11_cat = round(fval11/3) * 3) %>%
+group_by(fval11_cat, xy, uy, overlap) %>%
+summarise(
+	n=n(),
+	obs11=mean(obs11_beta),
+	obs22=mean(obs22_beta),
+	# obso=mean(obso_beta),
+	mr11=mean(mr11_beta),
+	mr22=mean(mr22_beta),
+	mr12=mean(mr12_beta),
+	mr21=mean(mr21_beta),
+	mro=mean(mro_beta),
+	mrose=sd(mro_beta)/sqrt(n())
+)
+templ <- gather(temp, key="key", value="value", -c(fval11_cat, xy, uy, n, overlap))
+t1 <- templ %>% filter(key == "mro")
+t2 <- templ %>% filter(key == "mrose")
+names(t2)[names(t2) == "value"] <- "se"
+templ <- inner_join(t1, t2 %>% ungroup %>% select(fval11_cat, xy, uy, overlap, se))
+ggplot(templ %>% filter(key %in% c("mro")), aes(x=overlap, y=value)) +
+geom_point(aes(colour=as.factor(fval11_cat))) +
+geom_errorbar(aes(colour=as.factor(fval11_cat), ymin=value - se * 1.96, ymax=value + se * 1.96), width=0) +
 geom_hline(aes(yintercept=xy)) +
-geom_line(aes(colour=f, group=as.factor(f))) +
-facet_grid(xy ~ uy, scale="free_y")
+geom_line(aes(colour=as.factor(fval11_cat), group=as.factor(fval11_cat))) +
+facet_grid(paste("causal effect =", xy^2) ~ paste("confounding =", uy), scale="free_y") +
+scale_colour_brewer() +
+labs(x="Proportion sample overlap", y="Mean effect estimate", colour="Instrument F statistic")
+
+
+
+
 
 ```
 
+
+
+While the limitations of MR are many, it is unlikely that sample overlap will have a major impact in the context of genome-wide association studies.
