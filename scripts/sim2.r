@@ -8,7 +8,7 @@ main <- function()
 		nsim = 1:10000,
 		nid=c(100000),
 		overlap=seq(0, 1, by=0.2),
-		f = c(10, 50, 100, 500),
+		f = c(10, 20, 30, 40, 50, 100),
 		xy = sqrt(c(0, 0.2)),
 		ux = c(0.3),
 		uy = c(0, 0.1, 0.3)
@@ -18,7 +18,7 @@ main <- function()
 	args <- commandArgs(T)
 	splitsize <- as.numeric(args[1])
 	chunk <- as.numeric(args[2])
-	set.seed(chunk)
+	set.seed(chunk + 1000000)
 
 	first <- (chunk-1) * splitsize + 1
 	last <- min(chunk * splitsize, nrow(param))
