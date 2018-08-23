@@ -1,6 +1,6 @@
 library(simulateGP)
 library(TwoSampleMR)
-library(progress)
+#library(progress)
 
 
 main <- function()
@@ -30,10 +30,11 @@ main <- function()
 	message(first, " to ", last)
 
 	out <- list()
-	pb <- progress_bar$new(total=nrow(param))
+#	pb <- progress_bar$new(total=nrow(param))
 	for(i in 1:nrow(param))
 	{
-		pb$tick()
+#		pb$tick()
+		message(i)
 		out[[i]] <- suppressMessages(runsim(param[i,]))
 	}
 	out <- bind_rows(out)
