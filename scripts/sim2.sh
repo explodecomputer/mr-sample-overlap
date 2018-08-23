@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
-#SBATCH --array=1-144
+#SBATCH --array=1-216
 #SBATCH --output=job_reports/slurm-%A_%a.out
 #SBATCH --partition=mrcieu
 
