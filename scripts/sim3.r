@@ -10,7 +10,7 @@ main <- function()
 		nsnp = 20,
 		maf = 0.3,
 		nsim = 1:10000,
-		xy = 0,
+		xy = c(0, 0.2),
 		ux = 1,
 		uy = c(0, 0.6, 1, 2),
 		gx = seq(0.04, 0.24, by=0.04),

@@ -84,6 +84,7 @@ Simulations were conducted to evaluate the extent to which instrument strength i
 
 ```{r}
 load("../results/sim2.rdata")
+param$overlap <- 1 - param$overlap
 temp <- group_by(param, nid, overlap, f, xy, ux, uy) %>% summarise()
 temp$sim <- 1:nrow(temp)
 param <- inner_join(param, temp) %>% as.tibble
