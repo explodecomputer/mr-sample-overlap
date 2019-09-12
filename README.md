@@ -67,6 +67,13 @@ mkdir -p job_reports
 sbatch sim3.sh
 ```
 
+After all the chunks have finished you can aggregate them into a single results file using
+
+```
+Rscript sim3_aggregate.r
+```
+
+
 Sim2 is giving similar results to those in Burgess 2016 but much noisier. Try just repeating the same thing as in Burgess 2016 - follow simulations here [https://onlinelibrary.wiley.com/doi/abs/10.1002/gepi.21998](https://onlinelibrary.wiley.com/doi/abs/10.1002/gepi.21998) except for the following:
 
 1. Larger range of gx effects to simulate F values more in line with GWAS results
