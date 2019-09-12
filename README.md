@@ -49,6 +49,24 @@ Same as sim1 but more refined set of parameters
 
 ## Sim3 
 
+There are ~5 million simulations to be run. We can split this into some number of chunks, where each chunk is only ~20k simulations. Then we create a queue on bluecrystal4 for each of those chunks.
+
+To test (e.g.) chunk number 1:
+
+```
+./scripts/sim3.sh 1
+```
+
+It might not work if you don't have the necessary packages installed (https://github.com/explodecomputer/simulateGP and https://github.com/mrcieu/TwoSampleMR). You can also change the R module to be more recent.
+
+To submit all chunks to bc4:
+
+```
+cd scripts
+mkdir -p job_reports
+sbatch sim3.sh
+```
+
 Sim2 is giving similar results to those in Burgess 2016 but much noisier. Try just repeating the same thing as in Burgess 2016 - follow simulations here [https://onlinelibrary.wiley.com/doi/abs/10.1002/gepi.21998](https://onlinelibrary.wiley.com/doi/abs/10.1002/gepi.21998) except for the following:
 
 1. Larger range of gx effects to simulate F values more in line with GWAS results
