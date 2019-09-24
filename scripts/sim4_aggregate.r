@@ -1,6 +1,6 @@
 library(dplyr)
 
-fn <- list.files("../results/sim2", full=TRUE)
+fn <- list.files("../results/sim3", full=TRUE)
 l <- list()
 for(i in 1:length(fn))
 {
@@ -10,7 +10,7 @@ for(i in 1:length(fn))
 }
 
 param <- bind_rows(l)
-save(param, file="../results/sim2.rdata")
+save(param, file="../results/sim3.rdata")
 
 
 

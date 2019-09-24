@@ -1,0 +1,162 @@
+---
+title: Is sample overlap a problem in two-sample Mendelian randomisation?
+author: Gibran Hemani
+---
+
+```{r, echo=FALSE}
+library(knitr)
+opts_chunk$set(echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE)
+```
+
+```{r}
+library(TwoSampleMR)
+library(tidyverse)
+library(RColorBrewer)
+my_orange = brewer.pal(n = 9, "Oranges")[4:9]
+```
+
+## Summary
+
+- Sample overlap isn't a problem when SNP effects used in MR are at GWAS significance levels. 
+- However, winner's curse inflates discovery effect estimates, so some instruments used in MR could be weak instruments masquerading as strong instruments
+- Selecting on weak instruments with large effects due to sampling variation biases results more than just using weak instruments without thresholding
+- Best practice would be to select SNPs that have large effects in replication
+
+
+## Background
+
+Weak instrument bias and its interplay with sample overlap is amongst the myriad of complications in two sample Mendelian randomisation (2SMR) analyses. The use of Weak instruments will induce bias in the direction of the null if the exposure and the outcome data is from entirely independent samples. However, the bias is in the direction of the observational association (which is prone to confonding) if there is sample overlap. As a guide, an instrument with an F statistic of 10 will lead to 10% bias in the direction of the observational estimate.
+
+Often the extent of sample overlap is not known between two GWAS datasets, so the question of the direction of potential bias is hard to predict. This has led some studies to exclude analyses if there is suspicion or knowledge of substantial sample overlap between an exposure and outcome analysis.
+
+However, the magnitude of bias that might arise is a function of the strength of the instruments, and it is important to recall that the vast majority of properly conducted 2SMR analyses restrict instruments to those that pass GWAS significance at p < 5e-8. This imparts an explicit cap on how low the F statistic can go. For example, the distribution of F statistics for instruments typically used for body mass index are shown here:
+
+
+```{r}
+a <- extract_instruments(2)
+b <- extract_outcome_data(a$SNP, 7)
+dat <- harmonise_data(a, b) %>% filter(mr_keep)
+
+a$rsq <- a$beta.exposure^2 * a$eaf.exposure * (1 - a$eaf.exposure) * 2
+a$rsq2 <- get_r_from_pn(a$pval.exposure, a$samplesize.exposure)^2
+
+a$f <- a$rsq / (1 - a$rsq) * (a$samplesize.exposure-2)
+ggplot(a, aes(x=SNP, y=pmin(f, 100))) +
+geom_point() +
+geom_hline(yintercept=10, linetype = "dotted") +
+labs(x="BMI instrumenting SNP", y="F statistic") +
+ylim(0, 100) +
+scale_y_continuous(breaks=seq(0,100,10)) +
+theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=6))
+```
+
+The y-axis here is capped to an F value of 100, but the highest F statistic is actually `r max(a$f) %>% round(1)` and the mean F statistic is `r mean(a$f) %>% round(1)`.
+
+## F statistics across all GWAS studies
+
+Looking systematically at the GWAS studies for continuous traits available in MR-Base, we can see that this sort of distribution is typical:
+
+```{r}
+library(TwoSampleMR)
+data(mrbase_instruments)
+mrb <- subset(mrbase_instruments, !units.exposure %in% c("log odds") & !is.na(units.exposure) & !is.na(pval.exposure) & !is.na(samplesize.exposure))
+mrb$rsq <- get_r_from_pn(mrb$pval.exposure, mrb$samplesize.exposure)^2
+mrb$fval <- mrb$rsq / (1 - mrb$rsq) * (mrb$samplesize.exposure - 2)
+mrb <- subset(mrb, !is.na(fval))
+trait_summary <- group_by(mrb, id.exposure) %>%
+	summarise(
+		`min within study`=min(fval),
+		`max within study`=max(fval),
+		`median within study`=median(fval),
+		`mean within study`=mean(fval),
+		nsnp=n(),
+		nid=mean(samplesize.exposure)
+	)
+trait_summaryl <- gather(trait_summary, "key", "value", -c(id.exposure, nsnp, nid))
+temp <- data_frame(id.exposure=1, nsnp=1, nid=1, key="all snps", value=mrb$fval)
+trait_summaryl <- rbind(trait_summaryl, temp)
+ggplot(trait_summaryl, aes(x=value)) + geom_histogram(bins=100) + geom_vline(xintercept=10) +
+facet_grid(key ~ ., scale="free_y") +
+labs(x="F statistics", y="Number of studies") +
+scale_x_continuous(limits=c(0,100), breaks=seq(0,100,10))
+```
+
+Winner's curse disproportionately inflates the effect sizes of SNPs with p-values closest to the threshold, so it is quite likely that among the GWAS studies there are some weak instruments. 
+
+## The influence of sample overlap on bias in MR
+
+Simulations were conducted to evaluate the extent to which instrument strength attenuated the bias due to sample overlap. Simulation parameters were identical to those in Burgess et al 2016 except we also included larger SNP effect sizes that will produce F statistics that are more in line with those seen in GWAS.
+
+Simulations were conducted in two ways:
+
+1. 20 instruments with the same simulated effect size were all used to obtain the IVW estimate (**all**)
+2. Only those instruments among the 20 simulated that had p < 5e-8 were used to obtain IVW estimate (**sig**), to mimic the standard procedure used in GWAS
+
+The simulations were conducted with different confounder effects and with causal effects of x on y on 0 and 0.2. 
+
+
+```{r}
+load("../results/sim3.rdata")
+param$overlap <- 1 - param$offset / (param$nid/2)
+temp <- group_by(param, nid, overlap, gx, xy, ux, uy, what) %>% summarise()
+temp$sim <- 1:nrow(temp)
+param <- inner_join(param, temp) %>% as.tibble
+# temp <- filter(param, fval11 > 9) %>% group_by(sim, f, xy, uy, overlap) %>%
+temp <- param %>% group_by(sim, gx, xy, uy, overlap, what) %>%
+summarise(
+	n=sum(!is.na(b)),
+	nsnp=mean(nsnp_inc),
+	se=sd(b, na.rm=TRUE) / sqrt(sum(!is.na(b))),
+	b=mean(b, na.rm=TRUE),
+	f = mean(mean_f, na.rm=TRUE)
+)
+
+fvals <- filter(param, what=="all") %>% group_by(gx) %>% summarise(fval=round(mean(mean_f, na.rm=TRUE), 1))
+
+templ <- gather(temp, key="key", value="value", -c(gx, xy, uy, sim, n, overlap, what))
+t1 <- templ %>% filter(key == "b")
+t2 <- templ %>% filter(key == "se")
+names(t2)[names(t2) == "value"] <- "se"
+templ <- inner_join(t1, t2 %>% ungroup %>% select(sim, se), by=c("sim"))
+templ <- inner_join(templ, fvals)
+
+ggplot(templ %>% filter(key %in% c("b")), aes(x=overlap, y=value)) +
+geom_point(aes(colour=as.factor(fval), shape=what)) +
+geom_errorbar(aes(colour=as.factor(fval), linetype=what, ymin=value - se * 1.96, ymax=value + se * 1.96), width=0) +
+geom_hline(aes(yintercept=xy)) +
+geom_line(aes(colour=as.factor(fval), linetype=what)) +
+facet_grid(paste("b_xy =", xy) ~ paste("b_uy =", uy), scale="free_y") +
+scale_colour_manual(values=my_orange) +
+labs(x="Proportion sample overlap", y="Mean effect estimate", colour="Mean instrument\nF value", shape="Instrument\nselection", linetype="Instrument\nselection") +
+theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+
+```
+
+While sample overlap clearly has an influence on bias of MR estimates, it is clear that when F statistics reach the levels that are typically seen in GWAS the problem is extremely small, and perhaps not in itself an issue that competes with other more pressing concerns in MR (e.g. horizontal pleiotropy, non-collapsibility of odds ratios).
+
+A problem that our simulations do highlight, however, is that winner's curse may lead to problems of weak instrument bias that are exacerbated by sample overlap. When instruments truly are weak, but only those that have apparently larger effects due to sampling variance are included in the analysis, then two things happen. First, we erroneously believe that we have strong instruments; second, the bias that arises is large, indeed even larger than that seen when all weak instruments are included in the analysis.
+
+There are two steps that can be taken to mitigate this problem.
+
+1. Use instrument effect estimates for discovery SNPs from an independent cohort
+2. Test for the extent to which heterogeneity is related to instruments with large and small F statistics. It may be that a less baised estimate is obtained by filtering on SNPs with a large F statistic in the replication sample.
+
+
+## Further thoughts
+
+**We do not know the extent to which winner's curse is biasing GWAS estimates**
+
+A systematic analysis of this across a number of studies would be very valuable. For example using UK Biobank, or mapping MR-Base traits to published results with independent replications. The expectation is that heterogeneity will be smaller using replicated effect esimates.
+
+**This is not solved by larger sample sizes**
+
+The problem of winner's curse and weak instruments masquerading as strong ones due to surpassing GWAS significance thresholds will not go away as sample sizes get larger. The SNPs hovering around significance are always going to be there.
+
+
+**Omnigenic model**
+
+The contrast in estimates obtained from instruments with large and small effects on the exposure may not solely be due to weak instrument bias. If there was no winner's curse, then heterogeneity will arise due to differential amounts of bias across the spectrum of instrument strengths. But the same pattern of bias relating to effect size could arise under different genetic architectures. For example, in the omnigenic model it is proposed that small effects are more likely to be pleiotropic. Alternatively, an argument could be made that the largest effects are most pleiotropic because they influence the trait through multiple independent pathways.
+
+
+
+
