@@ -9,7 +9,7 @@
 #SBATCH --partition=mrcieu
 
 echo "Running on ${HOSTNAME}"
-module add R/3.2.3-foss-2016a
+module add languages/r/3.6.0
 
 if [ -n "${1}" ]; then
   echo "${1}"

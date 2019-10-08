@@ -1,6 +1,7 @@
 ---
 title: Is sample overlap a problem in two-sample Mendelian randomisation?
 author: Gibran Hemani
+output: html_document
 ---
 
 ```{r, echo=FALSE}
@@ -12,6 +13,7 @@ opts_chunk$set(echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE)
 library(TwoSampleMR)
 library(tidyverse)
 library(RColorBrewer)
+library('MRInstruments')
 my_orange = brewer.pal(n = 9, "Oranges")[4:9]
 ```
 
@@ -34,7 +36,7 @@ However, the magnitude of bias that might arise is a function of the strength of
 
 ```{r}
 a <- extract_instruments(2)
-b <- extract_outcome_data(a$SNP, 7)
+b <- extract_outcome_data(a$SNP, 7, access_token=NULL)
 dat <- harmonise_data(a, b) %>% filter(mr_keep)
 
 a$rsq <- a$beta.exposure^2 * a$eaf.exposure * (1 - a$eaf.exposure) * 2
@@ -94,9 +96,10 @@ Simulations were conducted in two ways:
 
 The simulations were conducted with different confounder effects and with causal effects of x on y on 0 and 0.2. 
 
+## No Replication
 
 ```{r}
-load("../results/sim3.rdata")
+load("../results/sim.rdata")
 param$overlap <- 1 - param$offset / (param$nid/2)
 temp <- group_by(param, nid, overlap, gx, xy, ux, uy, what) %>% summarise()
 temp$sim <- 1:nrow(temp)
@@ -120,7 +123,7 @@ names(t2)[names(t2) == "value"] <- "se"
 templ <- inner_join(t1, t2 %>% ungroup %>% select(sim, se), by=c("sim"))
 templ <- inner_join(templ, fvals)
 
-ggplot(templ %>% filter(key %in% c("b")), aes(x=overlap, y=value)) +
+ggplot(templ %>% filter(key %in% c("b"), fval != 4.3), aes(x=overlap, y=value)) +
 geom_point(aes(colour=as.factor(fval), shape=what)) +
 geom_errorbar(aes(colour=as.factor(fval), linetype=what, ymin=value - se * 1.96, ymax=value + se * 1.96), width=0) +
 geom_hline(aes(yintercept=xy)) +
@@ -131,6 +134,88 @@ labs(x="Proportion sample overlap", y="Mean effect estimate", colour="Mean instr
 theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
 
 ```
+
+
+## Replication
+
+```{r}
+load("../results/sim_repl.rdata")
+param$overlap <- 1 - param$offset / (param$nid/2)
+temp <- group_by(param, nid, overlap, gx, xy, ux, uy, what) %>% summarise()
+temp$sim <- 1:nrow(temp)
+param <- inner_join(param, temp) %>% as.tibble
+# temp <- filter(param, fval11 > 9) %>% group_by(sim, f, xy, uy, overlap) %>%
+temp <- param %>% group_by(sim, gx, xy, uy, overlap, what) %>%
+summarise(
+	n=sum(!is.na(b)),
+	nsnp=mean(nsnp_inc),
+	se=sd(b, na.rm=TRUE) / sqrt(sum(!is.na(b))),
+	b=mean(b, na.rm=TRUE),
+	f = mean(mean_f, na.rm=TRUE)
+)
+
+fvals <- filter(param, what=="all") %>% group_by(gx) %>% summarise(fval=round(mean(mean_f, na.rm=TRUE), 1))
+
+templ <- gather(temp, key="key", value="value", -c(gx, xy, uy, sim, n, overlap, what))
+t1 <- templ %>% filter(key == "b")
+t2 <- templ %>% filter(key == "se")
+names(t2)[names(t2) == "value"] <- "se"
+templ <- inner_join(t1, t2 %>% ungroup %>% select(sim, se), by=c("sim"))
+templ <- inner_join(templ, fvals)
+
+ggplot(templ %>% filter(key %in% c("b"), fval != 4.3), aes(x=overlap, y=value)) +
+geom_point(aes(colour=as.factor(fval), shape=what)) +
+geom_errorbar(aes(colour=as.factor(fval), linetype=what, ymin=value - se * 1.96, ymax=value + se * 1.96), width=0) +
+geom_hline(aes(yintercept=xy)) +
+geom_line(aes(colour=as.factor(fval), linetype=what)) +
+facet_grid(paste("b_xy =", xy) ~ paste("b_uy =", uy), scale="free_y") +
+scale_colour_manual(values=my_orange) +
+labs(x="Proportion sample overlap", y="Mean effect estimate", colour="Mean instrument\nF value", shape="Instrument\nselection", linetype="Instrument\nselection") +
+theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+
+```
+
+
+## Sliding window
+
+```{r}
+load("../results/sim_sep.rdata")
+param$overlap <- 1 - param$offset / (param$nid/2)
+temp <- group_by(param, nid, overlap, gx, xy, ux, uy, what) %>% summarise()
+temp$sim <- 1:nrow(temp)
+param <- inner_join(param, temp) %>% as.tibble
+# temp <- filter(param, fval11 > 9) %>% group_by(sim, f, xy, uy, overlap) %>%
+temp <- param %>% group_by(sim, gx, xy, uy, overlap, what) %>%
+summarise(
+	n=sum(!is.na(b)),
+	nsnp=mean(nsnp_inc),
+	se=sd(b, na.rm=TRUE) / sqrt(sum(!is.na(b))),
+	b=mean(b, na.rm=TRUE),
+	f = mean(mean_f, na.rm=TRUE)
+)
+
+fvals <- filter(param, what=="all") %>% group_by(gx) %>% summarise(fval=round(mean(mean_f, na.rm=TRUE), 1))
+
+templ <- gather(temp, key="key", value="value", -c(gx, xy, uy, sim, n, overlap, what))
+t1 <- templ %>% filter(key == "b")
+t2 <- templ %>% filter(key == "se")
+names(t2)[names(t2) == "value"] <- "se"
+templ <- inner_join(t1, t2 %>% ungroup %>% select(sim, se), by=c("sim"))
+templ <- inner_join(templ, fvals)
+
+ggplot(templ %>% filter(key %in% c("b"), fval != 4.3), aes(x=overlap, y=value)) +
+geom_point(aes(colour=as.factor(fval), shape=what)) +
+geom_errorbar(aes(colour=as.factor(fval), linetype=what, ymin=value - se * 1.96, ymax=value + se * 1.96), width=0) +
+geom_hline(aes(yintercept=xy)) +
+geom_line(aes(colour=as.factor(fval), linetype=what)) +
+facet_grid(paste("b_xy =", xy) ~ paste("b_uy =", uy), scale="free_y") +
+scale_colour_manual(values=my_orange) +
+labs(x="Proportion sample overlap", y="Mean effect estimate", colour="Mean instrument\nF value", shape="Instrument\nselection", linetype="Instrument\nselection") +
+theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+
+```
+
+
 
 While sample overlap clearly has an influence on bias of MR estimates, it is clear that when F statistics reach the levels that are typically seen in GWAS the problem is extremely small, and perhaps not in itself an issue that competes with other more pressing concerns in MR (e.g. horizontal pleiotropy, non-collapsibility of odds ratios).
 
