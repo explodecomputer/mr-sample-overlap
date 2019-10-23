@@ -13,15 +13,15 @@ library(TwoSampleMR)
 main <- function()
 {
   param <- expand.grid(
-    nid = 20000,
+    nid = 40000,
     nsnp = 20,
     maf = 0.3,
     nsim = 1:10000,
-    xy = c(0, 0.2),
+    xy = 0.2,
     ux = 1,
     uy = c(0, 0.6, 1, 2),
     gx = seq(0.04, 0.24, by=0.04),
-    offset = seq(0, 10000, length.out=11)
+    offset = seq(0, 30000, length.out=101)
   )
   
   # Adding the condition for replication: yes/no
@@ -48,8 +48,8 @@ main <- function()
     out[[i]] <- suppressMessages(runsim(param[i,]))
   }
   out <- bind_rows(out)
-  dir.create("../results/sim", recursive=TRUE, showWarnings=FALSE)
-  save(out, file=paste0("../results/sim/out", chunk, ".rdata"))
+  dir.create("../results/sim_overlap", recursive=TRUE, showWarnings=FALSE)
+  save(out, file=paste0("../results/sim_overlap/out", chunk, ".rdata"))
 }
 
 # Function for running the simulations
@@ -61,12 +61,15 @@ runsim <- function(param)
   x <- cbind(g,u) %*% c(rep(param$gx, param$nsnp), param$ux) + rnorm(param$nid)
   y <- param$xy * x + u * param$uy + rnorm(param$nid)
   
+  # Find b_xy from the linear model
+  param$obs_beta <- summary(lm(y ~ x))$coefficients[2,1]
+  
   # Effect of G on X in dataset D
-  exp_d <- gwas(x[1:(param$nid/2)], g[1:(param$nid/2),])
+  exp_d <- gwas(x[(param$nid/4+1):(2*param$nid/4)], g[(param$nid/4+1):(2*param$nid/4),])
   # Effect of G on X in replication R
-  exp_r <- gwas(x[(param$nid/2+1):param$nid], g[(param$nid/2+1):param$nid,])
+  exp_r <- gwas(x[(2*param$nid/4+1):(3*param$nid/4)], g[(2*param$nid/4+1):(3*param$nid/4),])
   # Effect of G on Y
-  out <- gwas(y[1:(param$nid/2)+param$offset], g[1:(param$nid/2)+param$offset,])
+  out <- gwas(y[1:10000+param$offset], g[1:10000+param$offset,])
   
   # perform the MR analysis using D
   dat <- data.frame(
@@ -98,7 +101,7 @@ runsim <- function(param)
   # filter by most significant SNPs
   dat <- subset(dat, pval.exposure < 5e-8)
   
-  # SNPs from the exposure replication dataset that gave significant results
+  # SNPs from the exposure original dataset that gave significant results
   exp_d_s <- subset(exp_d, snp %in% dat$SNP)
   
   # SNPs from the exposure replication dataset that gave significant results
@@ -142,6 +145,15 @@ runsim <- function(param)
     p2$pval <- res2$pval
     p2$mean_f <- mean(dat$fval.exposure, na.rm=TRUE)
     p2$obs <- lm(y ~ x)$coef[2]
+    
+    if(param$repl == "y")
+    {
+      # combine exp_d_s and exp_r_s to create exp_umvcue_s e.g.
+      # exp_umvcue_s <- umvcue(exp_d_s, exp_r_s)
+      # 
+      # Perform MR of exp_umvcue_s and out_s
+    }
+    
   }
   p2$what <- "sig"
   
