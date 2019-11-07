@@ -1,0 +1,241 @@
+---
+title: Exploring sample overlap simulations
+---
+
+
+```{r}
+library(simulateGP)
+library(TwoSampleMR)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(parallel)
+```
+
+## Outline of simulation
+
+1. Create x and y in a population
+2. Find instruments for x in discovery and test for significance
+3. Retest in replication
+4. Extract those effects from outcome GWAS, which could be independent, discovery or replication sample
+
+
+
+### Find GWAS parameters which will likely give high winner's curse
+
+
+```{r}
+simulate_gwasx <- function(nid, nsnp, bgx, bux)
+{
+	g <- make_geno(nid, nsnp, 0.5)
+	u <- rnorm(nid)
+	geneff <- rep(bgx, nsnp)
+	x <- make_phen(c(geneff, bux), cbind(g, u))
+	gwas(x, g)
+}
+
+
+sapply(1:100, function(x)
+{
+	simulate_gwasx(3000, 20, 0.08, 0.4) %>%
+	{sum(.$pval < 5e-8)}
+}) %>% table
+```
+
+
+### Check that UMVCUE works at reducing winner's curse
+
+```{r}
+
+umvcue <- function(d_beta, r_beta, d_se, r_se, pthresh)
+{
+	t <- qnorm(1 - pthresh/2)
+	MLE <- (r_se^2 * d_beta + d_se^2 * r_beta) / (r_se^2 + d_se^2)
+	BB <- (sqrt(r_se^2 + d_se^2) / d_se^2) * (MLE - t * d_se)
+	b <- MLE - (r_se^2 / sqrt(r_se^2 + d_se^2) * dnorm(BB) / pnorm(BB))
+	return(b)
+}
+
+
+simulate_umvcue <- function(nid, nsnp, bgx, bux)
+{
+	geneff <- rep(bgx, nsnp)
+
+	g <- make_geno(nid/2, nsnp, 0.5)
+	u <- rnorm(nid/2)
+	x <- make_phen(c(geneff, bux), cbind(g, u))
+	d <- gwas(x, g)
+	g <- make_geno(nid/2, nsnp, 0.5)
+	u <- rnorm(nid/2)
+	x <- make_phen(c(geneff, bux), cbind(g, u))
+	r <- gwas(x, g)
+	index <- d$pval < 5e-8
+	dat <- tibble(
+		truth = geneff,
+		disc = d$bhat,
+		rep = r$bhat,
+		disc_sig = d$pval < 5e-8,
+		what="all"
+	)
+	dat$umvcue <- NA
+	if(any(index))
+	{
+		dat$umvcue[index] <- umvcue(d$bhat[index], r$bhat[index], d$se[index], r$se[index], 5e-8)
+	}
+	return(dat)
+}
+
+
+out <- lapply(1:100, function(x)
+{
+	simulate_umvcue(3000, 20, 0.13, 0.4) %>%
+	mutate(sim=x)
+}) %>% bind_rows()
+
+out2 <- group_by(out, sim) %>%
+	summarise(
+		nsig=sum(disc_sig), 
+		truth=mean(truth),
+		disc = mean(disc),
+		rep = mean(rep),
+		umvcue = mean(umvcue, na.rm=T)
+	)
+
+out3 <- filter(out, disc_sig) %>%
+	group_by(sim) %>%
+	summarise(
+		nsig=sum(disc_sig), 
+		truth=mean(truth),
+		disc = mean(disc),
+		rep = mean(rep),
+		umvcue = mean(umvcue, na.rm=T)
+	)
+
+colMeans(out2)
+colMeans(out3)
+
+```
+
+it does reduce winner's curse, gives simular result to replication
+
+
+### Run MR simulations for different sampling strategies
+
+```{r}
+gwas_bias <- function(gwas)
+{
+	# sum((gwas$bhat - gwas$b)^2)
+	mean(abs(gwas$bhat - gwas$b))
+}
+
+
+gwas_sim <- function(nid = 9000, nsnp = 20, bgx = 0.08, bxy = 0.2, buy = 0.4, bux = 0.4, out_index = 1:3000)
+{
+	# Simulate population
+	g <- make_geno(nid, nsnp, 0.5)
+	u <- rnorm(nid)
+	geneff <- rep(bgx, nsnp)
+	x <- make_phen(c(geneff, bux), cbind(g, u))
+	y <- make_phen(c(buy, bxy), cbind(u, x))
+
+	# Get observational estimate
+	obs_beta <- summary(lm(y ~ x))$coefficients[2,1]
+
+	# GWAS in samples
+	disc_index <- 1:3000
+	rep_index <- 3001:6000
+	disc_gwas <- gwas(x[disc_index], g[disc_index,])
+	rep_gwas <- gwas(x[rep_index], g[rep_index,])
+	out_gwas <- gwas(y[out_index], g[out_index,])
+
+	disc_gwas$b <- geneff
+	rep_gwas$b <- geneff
+	out_gwas$b <- geneff * bxy
+
+	bias <- expand.grid(sample=c("disc", "rep", "out"), what=c("all", "sig"), bias=NA)
+	bias$sse[1] <- gwas_bias(disc_gwas)
+	bias$sse[2] <- gwas_bias(rep_gwas)
+	bias$sse[3] <- gwas_bias(out_gwas)
+
+	# what is significant
+	index <- disc_gwas$pval < 5e-8
+	bias$sse[4] <- gwas_bias(disc_gwas[index,])
+	bias$sse[5] <- gwas_bias(rep_gwas[index,])
+	bias$sse[6] <- gwas_bias(out_gwas[index,])
+	bias$nsig <- sum(index)
+
+	# Perform MR
+	d <- list()
+	d$disc_all <- make_dat(disc_gwas, out_gwas)
+	d$rep_all <- make_dat(rep_gwas, out_gwas)
+	d$disc_sig <- make_dat(disc_gwas[index,], out_gwas[index,])
+	d$rep_sig <- make_dat(rep_gwas[index,], out_gwas[index,])
+	d$umvcue_sig <- d$disc_sig
+	d$umvcue_sig$beta.exposure <- umvcue(d$disc_sig$beta.exposure, d$rep_sig$beta.exposure, d$disc_sig$se.exposure, d$rep_sig$se.exposure, 5e-8)
+
+	m <- lapply(names(d), function(x) {
+		y <- d[[x]]
+		if(nrow(y) > 0)
+		{
+			z <- mr(y, method_list=c("mr_ivw", "mr_wald_ratio")) %>% as_tibble()
+			z$what <- x
+			return(z)
+		} else {
+			return(NULL)
+		}
+	}) %>% bind_rows()
+
+	return(list(bias=bias, mr=m))
+}
+
+
+res <- lapply(1:100, function(i) {
+	message(i)
+	bind_rows(
+		gwas_sim(out_index = 1:3000)$mr %>% mutate(overlap="disc_overlap"),
+		gwas_sim(out_index = 3001:6000)$mr %>% mutate(overlap="rep_overlap"),
+		gwas_sim(out_index = 3001:6000)$mr %>% mutate(overlap="no_overlap"),
+		gwas_sim(out_index = 1:6000)$mr %>% mutate(overlap="both_overlap")
+	)
+}) %>% bind_rows()
+
+ress <- filter(res) %>%
+	tidyr::separate(what, into=c("exposure_dataset", "instruments"), "_") %>%
+	group_by(exposure_dataset, instruments, overlap) %>%
+summarise(b=mean(b), n=n())
+
+
+ggplot(ress, aes(x=overlap, y=b)) +
+geom_bar(stat="identity", position="dodge", aes(fill=exposure_dataset)) +
+facet_grid(. ~ instruments) +
+scale_fill_brewer(type="qual")
+
+
+```
+
+Paper outline:
+
+1. We generated GWAS on 2.5k traits, with QC etc
+2. Simulations: Winner's curse makes sample overlap and weak instrument bias much worse
+3. Simulations: Replication and adjusting for winner's curse using UMVCUE doesn't work to solve it
+4. How to use this for MR?
+	- Winner's curse is an issue
+	- Sample overlap is an issue
+	- Weak instrument bias is an issue
+	- Recommendation:
+		1. external discovery; ukbb replication; ukbb outcome
+		2. ukbb discovery; ukbb replication; external outcome
+
+To do:
+
+1. We have used extreme simulation examples. What is a more realistic result? Can we do simulations (2) and (3) using realistic data
+	- e.g. 8 million SNPs, 10000 causal variants, explaning 50% variance, 400k samples
+	- either very slow simulations using current method or theoretical estimates not using individual level values using code that started here https://github.com/explodecomputer/simulateGP/blob/master/R/theoretical_gwas.R
+2. Perform discovery and replication in UKBB for instruments
+	- this is where the GWAS results are `/mnt/storage/private/mrcieu/research/scratch/IGD/data/public/UKB-b-*/clump.txt`. It includes the complete GWAS summary data on ~400k samples, plus the clumped top hits. The task is to
+		1. Go back to the original 400k individual level data
+		2. Split it into two - 200k and 200k (to do this you don't change the genetic data, you just set half the phenotype value to NA)
+		3. Re-estimate the clumped effects in each of the datasets
+
+
+
