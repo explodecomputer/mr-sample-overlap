@@ -4,12 +4,15 @@ title: Exploring sample overlap simulations
 
 
 ```{r}
-library(simulateGP)
-library(TwoSampleMR)
-library(dplyr)
-library(knitr)
-library(ggplot2)
-library(parallel)
+suppressWarnings(suppressPackageStartupMessages({
+	library(simulateGP)
+	library(TwoSampleMR)
+	library(dplyr)
+	library(ggplot2)
+	library(parallel)
+	library(knitr)
+}))
+opts_chunk$set(cache=TRUE, echo=TRUE, message=FALSE, warning=FALSE)
 ```
 
 ## Outline of simulation
@@ -166,10 +169,10 @@ gwas_sim <- function(nid = 9000, nsnp = 20, bgx = 0.08, bxy = 0.2, buy = 0.4, bu
 
 	# Perform MR
 	d <- list()
-	d$disc_all <- make_dat(disc_gwas, out_gwas)
-	d$rep_all <- make_dat(rep_gwas, out_gwas)
-	d$disc_sig <- make_dat(disc_gwas[index,], out_gwas[index,])
-	d$rep_sig <- make_dat(rep_gwas[index,], out_gwas[index,])
+	d$disc_all <- simulateGP::make_dat(disc_gwas, out_gwas)
+	d$rep_all <- simulateGP::make_dat(rep_gwas, out_gwas)
+	d$disc_sig <- simulateGP::make_dat(disc_gwas[index,], out_gwas[index,])
+	d$rep_sig <- simulateGP::make_dat(rep_gwas[index,], out_gwas[index,])
 	d$umvcue_sig <- d$disc_sig
 	d$umvcue_sig$beta.exposure <- umvcue(d$disc_sig$beta.exposure, d$rep_sig$beta.exposure, d$disc_sig$se.exposure, d$rep_sig$se.exposure, 5e-8)
 
@@ -202,7 +205,7 @@ res <- lapply(1:100, function(i) {
 ress <- filter(res) %>%
 	tidyr::separate(what, into=c("exposure_dataset", "instruments"), "_") %>%
 	group_by(exposure_dataset, instruments, overlap) %>%
-summarise(b=mean(b), n=n())
+summarise(b=mean(b), n=n(), se=sd(b)/sqrt(n))
 
 
 ggplot(ress, aes(x=overlap, y=b)) +
@@ -213,18 +216,26 @@ scale_fill_brewer(type="qual")
 
 ```
 
-Paper outline:
 
-1. We generated GWAS on 2.5k traits, with QC etc
-2. Simulations: Winner's curse makes sample overlap and weak instrument bias much worse
-3. Simulations: Replication and adjusting for winner's curse using UMVCUE doesn't work to solve it
-4. How to use this for MR?
-	- Winner's curse is an issue
-	- Sample overlap is an issue
-	- Weak instrument bias is an issue
-	- Recommendation:
-		1. external discovery; ukbb replication; ukbb outcome
-		2. ukbb discovery; ukbb replication; external outcome
+To do:
+
+1. Can we add monte carlo standard errors to the figure, i.e. does UMVCUE have smaller standard error than replication?
+2. Better labelling
+
+
+
+Conclusion - How to use this for MR?
+
+- Winner’s curse is an issue
+- Sample overlap is an issue
+- Weak instrument bias is an issue
+
+Recommendation - either do
+- external discovery; ukbb replication; ukbb outcome
+- ukbb discovery; ukbb replication; external outcome
+
+
+
 
 To do:
 
