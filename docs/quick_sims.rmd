@@ -202,6 +202,11 @@ res <- lapply(1:100, function(i) {
 	)
 }) %>% bind_rows()
 
+```
+
+Create figure
+
+```{r}
 ress <- filter(res) %>%
 	tidyr::separate(what, into=c("exposure_dataset", "instruments"), "_") %>%
 	group_by(exposure_dataset, instruments, overlap) %>%
@@ -212,9 +217,8 @@ ggplot(ress, aes(x=overlap, y=b)) +
 geom_bar(stat="identity", position="dodge", aes(fill=exposure_dataset)) +
 facet_grid(. ~ instruments) +
 scale_fill_brewer(type="qual")
-
-
 ```
+
 
 
 To do:
@@ -231,6 +235,7 @@ Conclusion - How to use this for MR?
 - Weak instrument bias is an issue
 
 Recommendation - either do
+
 - external discovery; ukbb replication; ukbb outcome
 - ukbb discovery; ukbb replication; external outcome
 
