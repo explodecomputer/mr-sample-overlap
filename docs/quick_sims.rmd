@@ -192,15 +192,23 @@ gwas_sim <- function(nid = 9000, nsnp = 20, bgx = 0.08, bxy = 0.2, buy = 0.4, bu
 }
 
 
-res <- lapply(1:100, function(i) {
+res <- mclapply(1:100, function(i) {
 	message(i)
 	bind_rows(
-		gwas_sim(out_index = 1:3000)$mr %>% mutate(overlap="disc_overlap"),
-		gwas_sim(out_index = 3001:6000)$mr %>% mutate(overlap="rep_overlap"),
-		gwas_sim(out_index = 3001:6000)$mr %>% mutate(overlap="no_overlap"),
-		gwas_sim(out_index = 1:6000)$mr %>% mutate(overlap="both_overlap")
+		gwas_sim(out_index = 1:3000, buy=-0.4)$mr %>% mutate(overlap="disc_overlap", buy=-0.4),
+		gwas_sim(out_index = 3001:6000, buy=-0.4)$mr %>% mutate(overlap="rep_overlap", buy=-0.4),
+		gwas_sim(out_index = 6001:9000, buy=-0.4)$mr %>% mutate(overlap="no_overlap", buy=-0.4),
+		gwas_sim(out_index = 1501:4500, buy=-0.4)$mr %>% mutate(overlap="both_overlap", buy=-0.4),
+		gwas_sim(out_index = 1:3000, buy=-0)$mr %>% mutate(overlap="disc_overlap", buy=0),
+		gwas_sim(out_index = 3001:6000, buy=-0)$mr %>% mutate(overlap="rep_overlap", buy=0),
+		gwas_sim(out_index = 6001:9000, buy=-0)$mr %>% mutate(overlap="no_overlap", buy=0),
+		gwas_sim(out_index = 1501:4500, buy=-0)$mr %>% mutate(overlap="both_overlap", buy=0),
+		gwas_sim(out_index = 1:3000, buy=0.4)$mr %>% mutate(overlap="disc_overlap", buy=0.4),
+		gwas_sim(out_index = 3001:6000, buy=0.4)$mr %>% mutate(overlap="rep_overlap", buy=0.4),
+		gwas_sim(out_index = 6001:9000, buy=0.4)$mr %>% mutate(overlap="no_overlap", buy=0.4),
+		gwas_sim(out_index = 1501:4500, buy=0.4)$mr %>% mutate(overlap="both_overlap", buy=0.4)
 	)
-}) %>% bind_rows()
+}, mc.cores=10) %>% bind_rows()
 
 ```
 
@@ -209,14 +217,19 @@ Create figure
 ```{r}
 ress <- filter(res) %>%
 	tidyr::separate(what, into=c("exposure_dataset", "instruments"), "_") %>%
-	group_by(exposure_dataset, instruments, overlap) %>%
+	group_by(exposure_dataset, instruments, overlap, buy) %>%
 summarise(b=mean(b), n=n(), se=sd(b)/sqrt(n))
+ress2 <- ress # 0.4
+ress3 <- ress # 
+ress4 <- ress # 0
 
-
-ggplot(ress, aes(x=overlap, y=b)) +
+p1 <- ggplot(ress, aes(x=overlap, y=b)) +
 geom_bar(stat="identity", position="dodge", aes(fill=exposure_dataset)) +
-facet_grid(. ~ instruments) +
-scale_fill_brewer(type="qual")
+facet_grid(instruments ~ buy) +
+scale_fill_brewer(type="qual") +
+geom_hline(yintercept=0.2, linetype="dotted") +
+theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.5))
+ggsave(p1, file="temp.pdf", width=10, height=10)
 ```
 
 
